@@ -38,6 +38,9 @@
             from { opacity: 0; transform: scale(0.95); }
             to { opacity: 1; transform: scale(1); }
         }
+        .victory-bg {
+            background: radial-gradient(circle, rgba(56,189,248,0.15) 0%, rgba(15,23,42,1) 70%);
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen p-4">
@@ -108,6 +111,24 @@
         </div>
     </div>
 
+    <!-- VICTORY SCREEN -->
+    <div id="victory-screen" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center victory-bg p-8 text-center">
+        <div class="mb-6 animate-bounce">
+            <span class="text-8xl">🎺</span>
+        </div>
+        <h2 class="text-5xl font-black text-white mb-2 tracking-tighter">GEFELICITEERD!</h2>
+        <p class="text-sky-400 font-bold uppercase tracking-widest mb-8">100 Sequences Voltooid</p>
+        
+        <div class="bg-slate-800/50 border border-slate-700 rounded-3xl p-8 mb-10 w-full max-w-sm">
+            <div class="text-slate-400 uppercase text-xs tracking-widest mb-2">Totale Tijd</div>
+            <div id="final-time-display" class="text-5xl font-mono font-bold text-white">00:00</div>
+        </div>
+
+        <button id="reset-btn" class="px-12 py-5 rounded-2xl bg-white text-slate-900 font-black text-xl hover:bg-sky-100 transition-all shadow-xl active:scale-95">
+            RESET & OPNIEUW
+        </button>
+    </div>
+
     <!-- Countdown Overlay -->
     <div id="countdown-overlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center countdown-overlay">
         <div id="countdown-text" class="text-xl font-bold text-slate-500 mb-4 uppercase tracking-[0.5em]">Focus</div>
@@ -121,13 +142,13 @@
         let clockInterval = null;
         
         let bpm = 76;
-        let currentClapIndex = 0; // Welke clap in de reeks (0 tot mode-1)
+        let currentClapIndex = 0; 
         let sequenceCount = 0;
         let mode = 8;
         let isPlaying = false;
         let isCountingDown = false;
         let countdownStep = 0;
-        const totalCountdownSteps = 16; // 4 tellen (4 * 4 zestienden)
+        const totalCountdownSteps = 16; 
         
         let startTime = 0;
 
@@ -139,15 +160,18 @@
 
         const setupScreen = document.getElementById('setup-screen');
         const focusScreen = document.getElementById('focus-screen');
+        const victoryScreen = document.getElementById('victory-screen');
         const dotsContainer = document.getElementById('dots-container');
         const playBtn = document.getElementById('play-btn');
         const stopBtn = document.getElementById('stop-btn');
+        const resetBtn = document.getElementById('reset-btn');
         const bpmSlider = document.getElementById('bpm-slider');
         const bpmValue = document.getElementById('bpm-value');
         const countdownOverlay = document.getElementById('countdown-overlay');
         const countdownNumber = document.getElementById('countdown-number');
         const focusCounter = document.getElementById('focus-counter');
         const focusTimer = document.getElementById('focus-timer');
+        const finalTimeDisplay = document.getElementById('final-time-display');
         const lastSessionDisplay = document.getElementById('last-session-time');
 
         function initAudio() {
@@ -166,6 +190,37 @@
             envelope.connect(audioCtx.destination);
             osc.start();
             osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        // Euforisch trompetje gesynthetiseerd met Web Audio op basis van huidig BPM
+        function playVictorySound() {
+            const secondsPerBeat = 60.0 / bpm;
+            // Noten: C5, C5, C5 (achtsten), E5 (kwart), G5 (halve)
+            const notes = [
+                { f: 523.25, beat: 0, dur: 0.1 }, 
+                { f: 523.25, beat: 0.5, dur: 0.1 }, 
+                { f: 523.25, beat: 1.0, dur: 0.1 }, 
+                { f: 659.25, beat: 1.5, dur: 0.3 }, 
+                { f: 783.99, beat: 2.5, dur: 0.6 }   
+            ];
+            
+            notes.forEach(n => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                const startTime = audioCtx.currentTime + (n.beat * secondsPerBeat);
+                
+                osc.frequency.setValueAtTime(n.f, startTime);
+                
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.2, startTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + n.dur);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(startTime);
+                osc.stop(startTime + n.dur);
+            });
         }
 
         function setProgress(percent) {
@@ -196,7 +251,9 @@
                 }
                 advanceNote();
             }
-            timerID = setTimeout(scheduler, 25);
+            if (isPlaying || isCountingDown) {
+                timerID = setTimeout(scheduler, 25);
+            }
         }
 
         function scheduleCountdownNote(time) {
@@ -212,7 +269,6 @@
         }
 
         function scheduleTrainingNote(clapIndex, time) {
-            // Accent alleen op de allereerste clap van de reeks (clapIndex 0)
             const isAccent = (clapIndex === 0);
             playClick(isAccent ? 1200 : 600, 0.15);
             
@@ -237,13 +293,14 @@
                 if (currentClapIndex >= mode) {
                     currentClapIndex = 0;
                     sequenceCount++;
-                    if (sequenceCount > 100) stop();
+                    if (sequenceCount >= 100) {
+                        triggerVictory();
+                    }
                 }
             }
         }
 
         function updateVisuals(clapIndex) {
-            // Lichtbolletjes updaten
             const allDots = document.querySelectorAll('.sequence-dot');
             allDots.forEach((dot, i) => {
                 if (i === clapIndex) {
@@ -254,10 +311,11 @@
             });
             
             focusCounter.innerText = sequenceCount;
-            setProgress(sequenceCount);
+            setProgress(Math.min(sequenceCount, 100));
         }
 
         function updateClock() {
+            if (!startTime) return;
             const now = Date.now();
             const diff = now - startTime;
             const totalSeconds = Math.floor(diff / 1000);
@@ -266,6 +324,21 @@
             const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             focusTimer.innerText = timeString;
             lastSessionDisplay.innerText = timeString;
+            finalTimeDisplay.innerText = timeString;
+        }
+
+        function triggerVictory() {
+            isPlaying = false;
+            clearTimeout(timerID);
+            clearInterval(clockInterval);
+            
+            // Speel het trompetje één keer af op het huidige tempo
+            playVictorySound();
+            
+            setTimeout(() => {
+                focusScreen.classList.add('hidden');
+                victoryScreen.classList.remove('hidden');
+            }, 500);
         }
 
         function setMode(m) {
@@ -308,16 +381,19 @@
             isCountingDown = false;
             countdownOverlay.classList.add('hidden');
             focusScreen.classList.add('hidden');
+            victoryScreen.classList.add('hidden');
             setupScreen.classList.remove('hidden', 'opacity-50', 'pointer-events-none');
             clearTimeout(timerID);
             clearInterval(clockInterval);
+            startTime = 0;
         }
 
         playBtn.addEventListener('click', startTraining);
         stopBtn.addEventListener('click', stop);
+        resetBtn.addEventListener('click', stop);
 
         bpmSlider.addEventListener('input', (e) => {
-            bpm = e.target.value;
+            bpm = parseInt(e.target.value);
             bpmValue.innerText = `${bpm} BPM`;
         });
     </script>
