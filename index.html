@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> Clap Trainer</title>
+    <title>Clap Trainer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -16,16 +16,16 @@
         .active-note {
             background-color: #38bdf8;
             box-shadow: 0 0 15px #38bdf8;
-            transform: scale(1.2);
+            transform: scale(1.3);
+            border-color: #7dd3fc;
         }
         .sequence-dot {
-            transition: all 0.1s ease;
+            transition: all 0.05s ease;
         }
         .countdown-overlay {
             background: rgba(15, 23, 42, 0.95);
             backdrop-filter: blur(12px);
         }
-        /* Progress Ring Styling */
         .progress-ring__circle {
             transition: stroke-dashoffset 0.35s, stroke 0.3s;
             transform: rotate(-90deg);
@@ -78,35 +78,15 @@
     </div>
 
     <!-- FOCUS MODUS (Training Scherm) -->
-    <div id="focus-screen" class="hidden fixed inset-0 z-40 bg-slate-950 flex flex-col items-center justify-center p-6">
-        <div class="focus-mode-content flex flex-col items-center w-full max-w-lg">
+    <div id="focus-screen" class="hidden fixed inset-0 z-40 bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div class="focus-mode-content flex flex-col items-center w-full max-w-2xl">
             
             <!-- Grote Cirkel met voortgang -->
-            <div class="relative flex items-center justify-center mb-12">
-                <!-- SVG gecentreerd en uitgelijnd -->
+            <div class="relative flex items-center justify-center mb-10">
                 <svg class="w-64 h-64 md:w-80 md:h-80" viewBox="0 0 200 200">
-                    <!-- Achtergrond cirkel -->
-                    <circle 
-                        class="text-slate-800 stroke-current" 
-                        stroke-width="10" 
-                        fill="transparent" 
-                        r="90" 
-                        cx="100" 
-                        cy="100" 
-                    />
-                    <!-- Progressie cirkel (exact dezelfde maten) -->
-                    <circle 
-                        id="progress-ring" 
-                        class="progress-ring__circle stroke-current text-sky-500" 
-                        stroke-width="10" 
-                        stroke-linecap="round" 
-                        fill="transparent" 
-                        r="90" 
-                        cx="100" 
-                        cy="100" 
-                    />
+                    <circle class="text-slate-800 stroke-current" stroke-width="10" fill="transparent" r="90" cx="100" cy="100" />
+                    <circle id="progress-ring" class="progress-ring__circle stroke-current text-sky-500" stroke-width="10" stroke-linecap="round" fill="transparent" r="90" cx="100" cy="100" />
                 </svg>
-                <!-- Tekst gecentreerd binnen de cirkel -->
                 <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span class="text-[12px] uppercase tracking-[0.3em] text-slate-500 font-bold mb-1">Sequence</span>
                     <span id="focus-counter" class="text-8xl font-black text-white leading-none">0</span>
@@ -114,12 +94,9 @@
                 </div>
             </div>
 
-            <!-- Visualizer voor de 16e noten -->
-            <div class="flex justify-center gap-6 mb-12">
-                <div id="focus-note-0" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
-                <div id="focus-note-1" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
-                <div id="focus-note-2" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
-                <div id="focus-note-3" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
+            <!-- Dynamische Visualizer voor claps (Lichtbolletjes) -->
+            <div id="dots-container" class="flex flex-wrap justify-center gap-3 mb-12 max-w-md">
+                <!-- Bolletjes worden via JS gegenereerd op basis van modus -->
             </div>
 
             <div class="flex flex-col items-center gap-4">
@@ -134,7 +111,7 @@
     <!-- Countdown Overlay -->
     <div id="countdown-overlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center countdown-overlay">
         <div id="countdown-text" class="text-xl font-bold text-slate-500 mb-4 uppercase tracking-[0.5em]">Focus</div>
-        <div id="countdown-number" class="text-[12rem] font-black text-sky-400 tracking-tighter">8</div>
+        <div id="countdown-number" class="text-[12rem] font-black text-sky-400 tracking-tighter">4</div>
     </div>
 
     <script>
@@ -143,20 +120,17 @@
         let timerID = null;
         let clockInterval = null;
         
-        let bpm = 76; // Standaard tempo aangepast naar 76
-        let current16thNote = 0; 
-        let currentClapCount = 0;
+        let bpm = 76;
+        let currentClapIndex = 0; // Welke clap in de reeks (0 tot mode-1)
         let sequenceCount = 0;
         let mode = 8;
         let isPlaying = false;
         let isCountingDown = false;
         let countdownStep = 0;
-        const totalCountdownSteps = 32; 
+        const totalCountdownSteps = 16; // 4 tellen (4 * 4 zestienden)
         
         let startTime = 0;
-        let elapsedTime = 0;
 
-        // Progress Ring Constanten
         const circle = document.getElementById('progress-ring');
         const radius = circle.r.baseVal.value;
         const circumference = radius * 2 * Math.PI;
@@ -165,6 +139,7 @@
 
         const setupScreen = document.getElementById('setup-screen');
         const focusScreen = document.getElementById('focus-screen');
+        const dotsContainer = document.getElementById('dots-container');
         const playBtn = document.getElementById('play-btn');
         const stopBtn = document.getElementById('stop-btn');
         const bpmSlider = document.getElementById('bpm-slider');
@@ -196,12 +171,20 @@
         function setProgress(percent) {
             const offset = circumference - (percent / 100 * circumference);
             circle.style.strokeDashoffset = offset;
-            
-            // Kleurverloop: Blauw -> Paars -> Rood
-            let color = '#38bdf8'; // Blauw
-            if (percent > 33) color = '#a855f7'; // Paars
-            if (percent > 75) color = '#ef4444'; // Rood
+            let color = '#38bdf8'; 
+            if (percent > 33) color = '#a855f7'; 
+            if (percent > 75) color = '#ef4444'; 
             circle.style.stroke = color;
+        }
+
+        function createDots() {
+            dotsContainer.innerHTML = '';
+            for (let i = 0; i < mode; i++) {
+                const dot = document.createElement('div');
+                dot.id = `dot-${i}`;
+                dot.className = "sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700";
+                dotsContainer.appendChild(dot);
+            }
         }
 
         function scheduler() {
@@ -209,7 +192,7 @@
                 if (isCountingDown) {
                     scheduleCountdownNote(nextNoteTime);
                 } else {
-                    scheduleTrainingNote(current16thNote, nextNoteTime);
+                    scheduleTrainingNote(currentClapIndex, nextNoteTime);
                 }
                 advanceNote();
             }
@@ -228,10 +211,13 @@
             }, (time - audioCtx.currentTime) * 1000);
         }
 
-        function scheduleTrainingNote(noteIndex, time) {
-            playClick(noteIndex === 0 ? 1000 : 600, 0.1);
+        function scheduleTrainingNote(clapIndex, time) {
+            // Accent alleen op de allereerste clap van de reeks (clapIndex 0)
+            const isAccent = (clapIndex === 0);
+            playClick(isAccent ? 1200 : 600, 0.15);
+            
             setTimeout(() => {
-                updateVisuals(noteIndex);
+                updateVisuals(clapIndex);
             }, (time - audioCtx.currentTime) * 1000);
         }
 
@@ -247,26 +233,26 @@
                     startTrainingSession();
                 }
             } else {
-                current16thNote = (current16thNote + 1) % 4;
-                currentClapCount++;
-
-                if (currentClapCount >= mode) {
-                    currentClapCount = 0;
+                currentClapIndex++;
+                if (currentClapIndex >= mode) {
+                    currentClapIndex = 0;
                     sequenceCount++;
                     if (sequenceCount > 100) stop();
                 }
             }
         }
 
-        function updateVisuals(noteIndex) {
-            // Update 16e noten dots
-            document.querySelectorAll('#focus-screen .sequence-dot').forEach((el, i) => {
-                const id = parseInt(el.id.replace('focus-note-', ''));
-                if (id === noteIndex) el.classList.add('active-note');
-                else el.classList.remove('active-note');
+        function updateVisuals(clapIndex) {
+            // Lichtbolletjes updaten
+            const allDots = document.querySelectorAll('.sequence-dot');
+            allDots.forEach((dot, i) => {
+                if (i === clapIndex) {
+                    dot.classList.add('active-note');
+                } else {
+                    dot.classList.remove('active-note');
+                }
             });
             
-            // Update Grote Cirkel
             focusCounter.innerText = sequenceCount;
             setProgress(sequenceCount);
         }
@@ -299,7 +285,10 @@
             isCountingDown = true;
             countdownStep = 0;
             sequenceCount = 0;
+            currentClapIndex = 0;
             setProgress(0);
+            createDots();
+            countdownNumber.innerText = "4";
             countdownOverlay.classList.remove('hidden');
             nextNoteTime = audioCtx.currentTime + 0.1;
             scheduler();
@@ -310,8 +299,6 @@
             setupScreen.classList.add('hidden');
             focusScreen.classList.remove('hidden');
             isPlaying = true;
-            current16thNote = 0;
-            currentClapCount = 0;
             startTime = Date.now();
             clockInterval = setInterval(updateClock, 100);
         }
@@ -322,7 +309,6 @@
             countdownOverlay.classList.add('hidden');
             focusScreen.classList.add('hidden');
             setupScreen.classList.remove('hidden', 'opacity-50', 'pointer-events-none');
-            
             clearTimeout(timerID);
             clearInterval(clockInterval);
         }
