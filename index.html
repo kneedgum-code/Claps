@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Clap Trainer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow: hidden;
+        }
+        .active-note {
+            background-color: #38bdf8;
+            box-shadow: 0 0 15px #38bdf8;
+            transform: scale(1.2);
+        }
+        .sequence-dot {
+            transition: all 0.1s ease;
+        }
+        .countdown-overlay {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+        }
+        /* Progress Ring Styling */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.35s, stroke 0.3s;
+            transform: rotate(-90deg);
+            transform-origin: center;
+        }
+        .focus-mode-content {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <!-- HOOFDMENU (Dashboard) -->
+    <div id="setup-screen" class="max-w-md w-full bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700 relative">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-800 text-sky-400 tracking-tight">CLAP TRAINER</h1>
+            <p class="text-slate-400 text-sm mt-1">Inspired by Jojo Mayer</p>
+        </header>
+
+        <div class="bg-slate-900 rounded-2xl p-4 text-center border border-slate-700 mb-8">
+            <div class="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Vorige Sessie Tijd</div>
+            <div id="last-session-time" class="text-2xl font-black text-slate-400">00:00</div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-8">
+            <button id="mode-8" onclick="setMode(8)" class="py-3 px-4 rounded-xl border-2 border-sky-500 bg-sky-500/10 text-sky-400 font-bold transition-all">
+                MODUS 8
+            </button>
+            <button id="mode-16" onclick="setMode(16)" class="py-3 px-4 rounded-xl border-2 border-slate-600 text-slate-400 font-bold hover:border-sky-400 transition-all">
+                MODUS 16
+            </button>
+        </div>
+
+        <div class="mb-10">
+            <div class="flex justify-between items-center mb-4">
+                <label class="text-sm font-semibold text-slate-300">TEMPO</label>
+                <span id="bpm-value" class="text-2xl font-bold text-sky-400">76 BPM</span>
+            </div>
+            <input type="range" id="bpm-slider" min="40" max="220" value="76" 
+                   class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500">
+        </div>
+
+        <button id="play-btn" class="w-full py-5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-900 font-black text-xl transition-all shadow-lg shadow-sky-500/20 active:scale-95">
+            START TRAINING
+        </button>
+    </div>
+
+    <!-- FOCUS MODUS (Training Scherm) -->
+    <div id="focus-screen" class="hidden fixed inset-0 z-40 bg-slate-950 flex flex-col items-center justify-center p-6">
+        <div class="focus-mode-content flex flex-col items-center w-full max-w-lg">
+            
+            <!-- Grote Cirkel met voortgang -->
+            <div class="relative flex items-center justify-center mb-12">
+                <!-- SVG gecentreerd en uitgelijnd -->
+                <svg class="w-64 h-64 md:w-80 md:h-80" viewBox="0 0 200 200">
+                    <!-- Achtergrond cirkel -->
+                    <circle 
+                        class="text-slate-800 stroke-current" 
+                        stroke-width="10" 
+                        fill="transparent" 
+                        r="90" 
+                        cx="100" 
+                        cy="100" 
+                    />
+                    <!-- Progressie cirkel (exact dezelfde maten) -->
+                    <circle 
+                        id="progress-ring" 
+                        class="progress-ring__circle stroke-current text-sky-500" 
+                        stroke-width="10" 
+                        stroke-linecap="round" 
+                        fill="transparent" 
+                        r="90" 
+                        cx="100" 
+                        cy="100" 
+                    />
+                </svg>
+                <!-- Tekst gecentreerd binnen de cirkel -->
+                <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span class="text-[12px] uppercase tracking-[0.3em] text-slate-500 font-bold mb-1">Sequence</span>
+                    <span id="focus-counter" class="text-8xl font-black text-white leading-none">0</span>
+                    <span class="text-slate-500 font-bold mt-2">/ 100</span>
+                </div>
+            </div>
+
+            <!-- Visualizer voor de 16e noten -->
+            <div class="flex justify-center gap-6 mb-12">
+                <div id="focus-note-0" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
+                <div id="focus-note-1" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
+                <div id="focus-note-2" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
+                <div id="focus-note-3" class="sequence-dot w-4 h-4 rounded-full bg-slate-800 border border-slate-700"></div>
+            </div>
+
+            <div class="flex flex-col items-center gap-4">
+                <div id="focus-timer" class="text-2xl font-mono text-sky-400/50">00:00</div>
+                <button id="stop-btn" class="px-8 py-3 rounded-full border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-all uppercase tracking-widest text-xs font-bold">
+                    Stop Training
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Countdown Overlay -->
+    <div id="countdown-overlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center countdown-overlay">
+        <div id="countdown-text" class="text-xl font-bold text-slate-500 mb-4 uppercase tracking-[0.5em]">Focus</div>
+        <div id="countdown-number" class="text-[12rem] font-black text-sky-400 tracking-tighter">8</div>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        let nextNoteTime = 0;
+        let timerID = null;
+        let clockInterval = null;
+        
+        let bpm = 76; // Standaard tempo aangepast naar 76
+        let current16thNote = 0; 
+        let currentClapCount = 0;
+        let sequenceCount = 0;
+        let mode = 8;
+        let isPlaying = false;
+        let isCountingDown = false;
+        let countdownStep = 0;
+        const totalCountdownSteps = 32; 
+        
+        let startTime = 0;
+        let elapsedTime = 0;
+
+        // Progress Ring Constanten
+        const circle = document.getElementById('progress-ring');
+        const radius = circle.r.baseVal.value;
+        const circumference = radius * 2 * Math.PI;
+        circle.style.strokeDasharray = `${circumference} ${circumference}`;
+        circle.style.strokeDashoffset = circumference;
+
+        const setupScreen = document.getElementById('setup-screen');
+        const focusScreen = document.getElementById('focus-screen');
+        const playBtn = document.getElementById('play-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const bpmSlider = document.getElementById('bpm-slider');
+        const bpmValue = document.getElementById('bpm-value');
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const countdownNumber = document.getElementById('countdown-number');
+        const focusCounter = document.getElementById('focus-counter');
+        const focusTimer = document.getElementById('focus-timer');
+        const lastSessionDisplay = document.getElementById('last-session-time');
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playClick(freq, vol = 0.15) {
+            const osc = audioCtx.createOscillator();
+            const envelope = audioCtx.createGain();
+            osc.frequency.value = freq;
+            envelope.gain.setValueAtTime(vol, audioCtx.currentTime);
+            envelope.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+            osc.connect(envelope);
+            envelope.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function setProgress(percent) {
+            const offset = circumference - (percent / 100 * circumference);
+            circle.style.strokeDashoffset = offset;
+            
+            // Kleurverloop: Blauw -> Paars -> Rood
+            let color = '#38bdf8'; // Blauw
+            if (percent > 33) color = '#a855f7'; // Paars
+            if (percent > 75) color = '#ef4444'; // Rood
+            circle.style.stroke = color;
+        }
+
+        function scheduler() {
+            while (nextNoteTime < audioCtx.currentTime + 0.1) {
+                if (isCountingDown) {
+                    scheduleCountdownNote(nextNoteTime);
+                } else {
+                    scheduleTrainingNote(current16thNote, nextNoteTime);
+                }
+                advanceNote();
+            }
+            timerID = setTimeout(scheduler, 25);
+        }
+
+        function scheduleCountdownNote(time) {
+            const isQuarterBeat = countdownStep % 4 === 0;
+            playClick(isQuarterBeat ? 1200 : 800, 0.1);
+            
+            setTimeout(() => {
+                const quarterNotesTotal = totalCountdownSteps / 4; 
+                const currentQuarter = Math.floor(countdownStep / 4);
+                const displayNum = quarterNotesTotal - currentQuarter;
+                if (isQuarterBeat) countdownNumber.innerText = displayNum;
+            }, (time - audioCtx.currentTime) * 1000);
+        }
+
+        function scheduleTrainingNote(noteIndex, time) {
+            playClick(noteIndex === 0 ? 1000 : 600, 0.1);
+            setTimeout(() => {
+                updateVisuals(noteIndex);
+            }, (time - audioCtx.currentTime) * 1000);
+        }
+
+        function advanceNote() {
+            const secondsPerBeat = 60.0 / bpm;
+            const secondsPer16th = secondsPerBeat / 4;
+            nextNoteTime += secondsPer16th;
+
+            if (isCountingDown) {
+                countdownStep++;
+                if (countdownStep >= totalCountdownSteps) {
+                    isCountingDown = false;
+                    startTrainingSession();
+                }
+            } else {
+                current16thNote = (current16thNote + 1) % 4;
+                currentClapCount++;
+
+                if (currentClapCount >= mode) {
+                    currentClapCount = 0;
+                    sequenceCount++;
+                    if (sequenceCount > 100) stop();
+                }
+            }
+        }
+
+        function updateVisuals(noteIndex) {
+            // Update 16e noten dots
+            document.querySelectorAll('#focus-screen .sequence-dot').forEach((el, i) => {
+                const id = parseInt(el.id.replace('focus-note-', ''));
+                if (id === noteIndex) el.classList.add('active-note');
+                else el.classList.remove('active-note');
+            });
+            
+            // Update Grote Cirkel
+            focusCounter.innerText = sequenceCount;
+            setProgress(sequenceCount);
+        }
+
+        function updateClock() {
+            const now = Date.now();
+            const diff = now - startTime;
+            const totalSeconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            focusTimer.innerText = timeString;
+            lastSessionDisplay.innerText = timeString;
+        }
+
+        function setMode(m) {
+            mode = m;
+            document.getElementById('mode-8').className = m === 8 ? 
+                "py-3 px-4 rounded-xl border-2 border-sky-500 bg-sky-500/10 text-sky-400 font-bold transition-all" : 
+                "py-3 px-4 rounded-xl border-2 border-slate-600 text-slate-400 font-bold hover:border-sky-400 transition-all";
+            
+            document.getElementById('mode-16').className = m === 16 ? 
+                "py-3 px-4 rounded-xl border-2 border-sky-500 bg-sky-500/10 text-sky-400 font-bold transition-all" : 
+                "py-3 px-4 rounded-xl border-2 border-slate-600 text-slate-400 font-bold hover:border-sky-400 transition-all";
+        }
+
+        function startTraining() {
+            initAudio();
+            setupScreen.classList.add('opacity-50', 'pointer-events-none');
+            isCountingDown = true;
+            countdownStep = 0;
+            sequenceCount = 0;
+            setProgress(0);
+            countdownOverlay.classList.remove('hidden');
+            nextNoteTime = audioCtx.currentTime + 0.1;
+            scheduler();
+        }
+
+        function startTrainingSession() {
+            countdownOverlay.classList.add('hidden');
+            setupScreen.classList.add('hidden');
+            focusScreen.classList.remove('hidden');
+            isPlaying = true;
+            current16thNote = 0;
+            currentClapCount = 0;
+            startTime = Date.now();
+            clockInterval = setInterval(updateClock, 100);
+        }
+
+        function stop() {
+            isPlaying = false;
+            isCountingDown = false;
+            countdownOverlay.classList.add('hidden');
+            focusScreen.classList.add('hidden');
+            setupScreen.classList.remove('hidden', 'opacity-50', 'pointer-events-none');
+            
+            clearTimeout(timerID);
+            clearInterval(clockInterval);
+        }
+
+        playBtn.addEventListener('click', startTraining);
+        stopBtn.addEventListener('click', stop);
+
+        bpmSlider.addEventListener('input', (e) => {
+            bpm = e.target.value;
+            bpmValue.innerText = `${bpm} BPM`;
+        });
+    </script>
+</body>
+</html>
